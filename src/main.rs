@@ -1,3 +1,14 @@
+mod lexer;
+mod tokens;
+
+use crate::lexer::Lexer;
+
 fn main() {
-    println!("Hello, world!");
+  let lexer = Lexer::from_file("./program.tsx").unwrap();
+  for token in lexer {
+    match token {
+      Ok(t) => println!("{:?}", t),
+      Err(e) => println!("Error! {}", e),
+    }
+  }
 }
