@@ -11,7 +11,7 @@ pub struct Lexer {
 #[derive(Copy, Clone, Debug)]
 enum LexerState {
   Typescript(TypescriptState),
-  Jsx(i32),
+  Jsx(JSXState),
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -35,6 +35,13 @@ enum JSXTransition {
   None,       // '<' => Bracket, _ => None
   Bracket,    // identifier => Identifier, _ => None
   Identifier, // 'extends' => None, (>,/>,identifier) => JSX, _ => None
+}
+
+#[derive(Copy, Clone, Debug)]
+enum JSXState {
+  Element,  // <something something="whatever"
+  Children, // <something>...
+  Closing,  // </something
 }
 
 impl Lexer {
@@ -80,10 +87,12 @@ impl Iterator for Lexer {
 
   fn next(&mut self) -> Option<LexerItem> {
     loop {
-      let length = self.state.len() - 1;
-      let maybe_result = match self.state[length] {
+      let last = self.state.len() - 1;
+      // println!("{:?}", self.state[last]);
+      let maybe_result = match self.state[last] {
         LexerState::Typescript(n) => next_typescript(self, n),
-        v => panic!("No parser for state {:?}", v),
+        LexerState::Jsx(n) => next_jsx(self, n),
+        // v => panic!("No parser for state {:?}", v),
       };
       match maybe_result {
         None => {}
@@ -141,7 +150,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::None,
           }))
         } else {
-          lexer.state.push(LexerState::Jsx(1))
+          lexer.state.push(LexerState::Jsx(JSXState::Element))
         }
       }
       _ => {}
@@ -165,22 +174,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
       }))
     }
   } else {
-    let mut raw = first_char.to_string();
-    loop {
-      if let Some(peek) = lexer.raw_data.peek() {
-        raw.push(*peek);
-      } else {
-        // We reached the end of the program.
-        break;
-      }
-
-      if VALID_SYMBOLS.contains(&&raw[..]) {
-        lexer.raw_data.next();
-      } else {
-        raw.pop();
-        break;
-      }
-    }
+    let raw = read_symbol(lexer, &first_char);
 
     // Change state
     if raw == "{" {
@@ -205,8 +199,15 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::Bracket,
           }))
         }
-        JSXTransition::Identifier if raw == ">" || raw == "/>" => {
-          lexer.state.push(LexerState::Jsx(1))
+        JSXTransition::None if raw == "<>" => lexer.state.push(LexerState::Jsx(JSXState::Children)),
+        JSXTransition::Identifier if raw == ">" => {
+          lexer.state.push(LexerState::Jsx(JSXState::Children))
+        }
+        JSXTransition::Identifier if raw == "/>" => {
+          lexer.replace_state(LexerState::Typescript(TypescriptState {
+            bracket_stack: state.bracket_stack,
+            jsx_transition: JSXTransition::None,
+          }))
         }
         _ => lexer.replace_state(LexerState::Typescript(TypescriptState {
           bracket_stack: state.bracket_stack,
@@ -245,6 +246,156 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
   }
 
   return Some(Some(token));
+}
+
+fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
+  let first_char: char;
+  loop {
+    match lexer.raw_data.next() {
+      Some(c) if c.is_whitespace() => continue,
+      Some(c) => {
+        first_char = c;
+        break;
+      }
+      None => return Some(None),
+    }
+  }
+
+  let token: LexerItem = match state {
+    JSXState::Element => {
+      /* Valid tokens are just a few:
+       * <element value="asdf" typescript={123}>
+       * - identifier
+       * - =
+       * - " => string literal
+       * - { => go typescript
+       * - > => push children
+       * - /> => pop state
+       */
+
+      if is_identifier(first_char) {
+        let mut name = first_char.to_string();
+        lexer.get_next_char_while(&mut name, is_identifier);
+    
+        Ok(Token::Identifier(name))
+      } else if first_char == '"' {
+        let mut value = String::new();
+        lexer.get_next_char_while(&mut value, |c| c != '"');
+        lexer.raw_data.next();
+
+        Ok(Token::Literal(Literal::Str(value)))
+      } else {
+        let symbol = read_symbol(lexer, &first_char);
+
+        if symbol == "=" || symbol == "-" || symbol == "." {
+          Ok(Token::Symbol(symbol))
+        } else if symbol == "{" {
+          lexer.state.push(LexerState::Typescript(TypescriptState {
+            bracket_stack: 1,
+            jsx_transition: JSXTransition::None,
+          }));
+  
+          Ok(Token::Symbol(symbol))
+        } else if symbol == ">" {
+          lexer.replace_state(LexerState::Jsx(JSXState::Children));
+  
+          Ok(Token::Symbol(symbol))
+        } else if symbol == "/>" {
+          lexer.state.pop();
+  
+          Ok(Token::Symbol(symbol))
+        } else {
+          Err(format!("Unkown token {}", symbol))
+        }
+      }
+    },
+    JSXState::Children => {
+      /* Valid tokens are just a few:
+       * some long text {123} <element />
+       * - { => go typescript
+       * - < => go Element
+       * - anything else => string literal
+       */
+
+      if first_char == '{' {
+        lexer.state.push(LexerState::Typescript(TypescriptState {
+          bracket_stack: 1,
+          jsx_transition: JSXTransition::None,
+        }));
+
+        Ok(Token::Symbol(String::from("{")))
+      } else if first_char == '<' {
+        let symbol = read_symbol(lexer, &first_char);
+
+        if symbol == "<" {
+          lexer.state.push(LexerState::Jsx(JSXState::Element));
+  
+          Ok(Token::Symbol(String::from(symbol)))
+        } else if symbol == "</" {
+          lexer.replace_state(LexerState::Jsx(JSXState::Closing));
+  
+          Ok(Token::Symbol(String::from(symbol)))
+        } else if symbol == "<>" {
+          lexer.state.push(LexerState::Jsx(JSXState::Children));
+
+          Ok(Token::Symbol(String::from(symbol)))
+        } else if symbol == "</>" {
+          lexer.state.pop();
+
+          Ok(Token::Symbol(String::from(symbol)))
+        } else {
+          Err(format!("Unkown token {}", symbol))
+        }
+      } else {
+        let mut value = String::from(first_char);
+        lexer.get_next_char_while(&mut value, |c| c != '{' && c != '<');
+
+        Ok(Token::Literal(Literal::Str(value)))
+      }
+    }
+    JSXState::Closing => {
+      /* We're just expecting to close:
+       * </element.subelement>
+       */
+
+      if is_identifier(first_char) {
+        let mut name = first_char.to_string();
+        lexer.get_next_char_while(&mut name, is_identifier);
+    
+        Ok(Token::Identifier(name))
+      } else if first_char == '.' {
+        Ok(Token::Symbol(String::from(".")))
+      } else if first_char == '>' {
+        lexer.state.pop();
+        Ok(Token::Symbol(String::from(">")))
+      } else {
+        panic!("Unknown token starting with {}", first_char)
+      }
+    }
+  };
+
+  return Some(Some(token));
+}
+
+fn read_symbol(lexer: &mut Lexer, first_char: &char) -> String {
+  let mut raw = first_char.to_string();
+  loop {
+    if let Some(peek) = lexer.raw_data.peek() {
+      raw.push(*peek);
+    } else {
+      // We reached the end of the program.
+      break;
+    }
+
+    if VALID_SYMBOLS.contains(&&raw[..]) {
+      lexer.raw_data.next();
+    } else {
+      raw.pop();
+      break;
+    }
+  }
+
+  return raw;
 }
 
 fn is_identifier(c: char) -> bool {

@@ -10,18 +10,18 @@ pub enum Token {
 pub enum Literal {
   Integer(i32),
   Str(String),
-  BigInt(String),
-  Boolean(bool),
-  Decimal(f64),
-  Regex(String, String), // pattern, flags
-  Undefined,
-  Null,
+  // BigInt(String),
+  // Boolean(bool),
+  // Decimal(f64),
+  // Regex(String, String), // pattern, flags
+  // Undefined,
+  // Null,
 }
 
 pub const VALID_SYMBOLS: &[&str] = &[
   "=", "+", "-", "*", "/", "==", "!=", "===", "!==", "<", ">", "<=", ">=", ";", "=>", ",", ".",
   "{", "}", "[", "]", "(", ")", "//", "/*", "*/", "`", "${", "?", ":", "&&", "||", "!", "</", "/>",
-  "?.", "??",
+  "<>", "</>", "?.", "??",
 ];
 
 pub const KNOWN_KEYWORDS: &[&str] = &[
@@ -44,4 +44,5 @@ pub const KNOWN_KEYWORDS: &[&str] = &[
   "var",
   "interface",
   "extends",
+  "type",
 ];
