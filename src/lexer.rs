@@ -39,9 +39,9 @@ enum JSXTransition {
 
 #[derive(Copy, Clone, Debug)]
 enum JSXState {
-  Element,  // <something something="whatever"
-  Children, // <something>...
-  Closing,  // </something
+  Element(i32), // <something<generic<T>> something="whatever"
+  Children,     // <something>...
+  Closing,      // </something
 }
 
 impl Lexer {
@@ -150,7 +150,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::None,
           }))
         } else {
-          lexer.state.push(LexerState::Jsx(JSXState::Element))
+          lexer.state.push(LexerState::Jsx(JSXState::Element(1)))
         }
       }
       _ => {}
@@ -202,6 +202,9 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
         JSXTransition::None if raw == "<>" => lexer.state.push(LexerState::Jsx(JSXState::Children)),
         JSXTransition::Identifier if raw == ">" => {
           lexer.state.push(LexerState::Jsx(JSXState::Children))
+        }
+        JSXTransition::Identifier if raw == "<" => {
+          lexer.state.push(LexerState::Jsx(JSXState::Element(2)))
         }
         JSXTransition::Identifier if raw == "/>" => {
           lexer.replace_state(LexerState::Typescript(TypescriptState {
@@ -262,7 +265,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
   }
 
   let token: LexerItem = match state {
-    JSXState::Element => {
+    JSXState::Element(element_stack) => {
       /* Valid tokens are just a few:
        * <element value="asdf" typescript={123}>
        * - identifier
@@ -278,16 +281,17 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
         lexer.get_next_char_while(&mut name, is_identifier);
     
         Ok(Token::Identifier(name))
-      } else if first_char == '"' {
+      } else if first_char == '"' || first_char == '\'' {
         let mut value = String::new();
-        lexer.get_next_char_while(&mut value, |c| c != '"');
+        lexer.get_next_char_while(&mut value, |c| c != first_char);
         lexer.raw_data.next();
 
         Ok(Token::Literal(Literal::Str(value)))
       } else {
         let symbol = read_symbol(lexer, &first_char);
 
-        if symbol == "=" || symbol == "-" || symbol == "." {
+        // <Component.Element<Pick<State, 'foo'> value="1" js={1} />
+        if symbol == "=" || symbol == "-" || symbol == "." || symbol == "," {
           Ok(Token::Symbol(symbol))
         } else if symbol == "{" {
           lexer.state.push(LexerState::Typescript(TypescriptState {
@@ -297,8 +301,15 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
   
           Ok(Token::Symbol(symbol))
         } else if symbol == ">" {
-          lexer.replace_state(LexerState::Jsx(JSXState::Children));
-  
+          if element_stack == 1 {
+            lexer.replace_state(LexerState::Jsx(JSXState::Children));
+          } else {
+            lexer.replace_state(LexerState::Jsx(JSXState::Element(element_stack-1)));
+          }
+          Ok(Token::Symbol(symbol))
+        } else if symbol == "<" {
+          lexer.replace_state(LexerState::Jsx(JSXState::Element(element_stack+1)));
+
           Ok(Token::Symbol(symbol))
         } else if symbol == "/>" {
           lexer.state.pop();
@@ -328,7 +339,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
         let symbol = read_symbol(lexer, &first_char);
 
         if symbol == "<" {
-          lexer.state.push(LexerState::Jsx(JSXState::Element));
+          lexer.state.push(LexerState::Jsx(JSXState::Element(1)));
   
           Ok(Token::Symbol(String::from(symbol)))
         } else if symbol == "</" {
