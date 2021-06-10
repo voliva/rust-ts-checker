@@ -21,10 +21,27 @@ pub enum Literal {
 pub const VALID_SYMBOLS: &[&str] = &[
   "=", "+", "-", "*", "/", "==", "!=", "===", "!==", "<", ">", "<=", ">=", ";", "=>", ",", ".",
   "{", "}", "[", "]", "(", ")", "//", "/*", "*/", "`", "${", "?", ":", "&&", "||", "!", "</", "/>",
-  "?.",
+  "?.", "??",
 ];
 
 pub const KNOWN_KEYWORDS: &[&str] = &[
-  "import", "from", "as", "function", "return", "while", "if", "do", "typeof", "delete", "switch",
-  "break", "continue", "export", "const", "let", "var",
+  "import",
+  "from",
+  "as",
+  "function",
+  "return",
+  "while",
+  "if",
+  "do",
+  "typeof",
+  "delete",
+  "switch",
+  "break",
+  "continue",
+  "export",
+  "const",
+  "let",
+  "var",
+  "interface",
+  "extends",
 ];
