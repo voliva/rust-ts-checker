@@ -129,6 +129,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
     };
 
     if !matches!(state.jsx_transition, JSXTransition::None) {
+      // not covered
       lexer.replace_state(LexerState::Typescript(TypescriptState {
         bracket_stack: state.bracket_stack,
         jsx_transition: JSXTransition::None,
@@ -150,6 +151,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::None,
           }))
         } else {
+          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Element(1)))
         }
       }
@@ -168,6 +170,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
     token = Ok(Token::Literal(Literal::Str(value)));
 
     if !matches!(state.jsx_transition, JSXTransition::None) {
+      // not covered
       lexer.replace_state(LexerState::Typescript(TypescriptState {
         bracket_stack: state.bracket_stack,
         jsx_transition: JSXTransition::None,
@@ -199,14 +202,19 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::Bracket,
           }))
         }
-        JSXTransition::None if raw == "<>" => lexer.state.push(LexerState::Jsx(JSXState::Children)),
+        JSXTransition::None if raw == "<>" => {
+          // not covered
+          lexer.state.push(LexerState::Jsx(JSXState::Children))
+        }
         JSXTransition::Identifier if raw == ">" => {
           lexer.state.push(LexerState::Jsx(JSXState::Children))
         }
         JSXTransition::Identifier if raw == "<" => {
+          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Element(2)))
         }
         JSXTransition::Identifier if raw == "/>" => {
+          // not covered
           lexer.replace_state(LexerState::Typescript(TypescriptState {
             bracket_stack: state.bracket_stack,
             jsx_transition: JSXTransition::None,
@@ -214,6 +222,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
         }
         _ => {
           if raw != "." {
+            // not covered
             lexer.replace_state(LexerState::Typescript(TypescriptState {
               bracket_stack: state.bracket_stack,
               jsx_transition: JSXTransition::None,
@@ -225,6 +234,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
 
     token = match &raw[..] {
       // Ignore comments until newline
+      // not covered
       s if s == "//" => {
         lexer.get_next_char_while(&mut String::new(), |c| c != '\n');
         return None;
@@ -306,8 +316,10 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
           Ok(Token::Symbol(symbol))
         } else if symbol == ">" {
           if element_stack == 1 {
+            // not covered
             lexer.replace_state(LexerState::Jsx(JSXState::Children));
           } else {
+            // not covered
             lexer.replace_state(LexerState::Jsx(JSXState::Element(element_stack-1)));
           }
           Ok(Token::Symbol(symbol))
@@ -316,6 +328,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
 
           Ok(Token::Symbol(symbol))
         } else if symbol == "/>" {
+          // not covered
           lexer.state.pop();
   
           Ok(Token::Symbol(symbol))
@@ -343,6 +356,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
         let symbol = read_symbol(lexer, &first_char);
 
         if symbol == "<" {
+          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Element(1)));
   
           Ok(Token::Symbol(String::from(symbol)))
@@ -351,10 +365,12 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
   
           Ok(Token::Symbol(String::from(symbol)))
         } else if symbol == "<>" {
+          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Children));
 
           Ok(Token::Symbol(String::from(symbol)))
         } else if symbol == "</>" {
+          // not covered
           lexer.state.pop();
 
           Ok(Token::Symbol(String::from(symbol)))
