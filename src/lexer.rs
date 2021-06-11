@@ -80,7 +80,7 @@ impl Lexer {
   }
 }
 
-type LexerItem = std::result::Result<Token, String>;
+pub type LexerItem = std::result::Result<Token, String>;
 
 impl Iterator for Lexer {
   type Item = LexerItem;
@@ -212,10 +212,14 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::None,
           }))
         }
-        _ => lexer.replace_state(LexerState::Typescript(TypescriptState {
-          bracket_stack: state.bracket_stack,
-          jsx_transition: JSXTransition::None,
-        })),
+        _ => {
+          if raw != "." {
+            lexer.replace_state(LexerState::Typescript(TypescriptState {
+              bracket_stack: state.bracket_stack,
+              jsx_transition: JSXTransition::None,
+            }))
+          }
+        }
       };
     }
 

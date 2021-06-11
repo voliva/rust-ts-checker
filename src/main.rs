@@ -1,4 +1,5 @@
 mod lexer;
+mod lexer_tests;
 mod tokens;
 
 use crate::lexer::Lexer;
