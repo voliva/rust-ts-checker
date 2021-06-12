@@ -70,6 +70,20 @@ mod lexer_tests {
     .into_iter();
 
     assert_equal(lexer, result);
+
+    let lexer = Lexer::from_text("3 < value || value > 5");
+    let result = vec![
+      i_literal(3),
+      symbol("<"),
+      identifier("value"),
+      symbol("||"),
+      identifier("value"),
+      symbol(">"),
+      i_literal(5),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
   }
 
   #[test]
@@ -120,6 +134,39 @@ mod lexer_tests {
     .into_iter();
 
     assert_equal(lexer, result);
+
+    let lexer = Lexer::from_text("<Elm<G>>body</Elm>");
+    let result = vec![
+      symbol("<"),
+      identifier("Elm"),
+      symbol("<"),
+      identifier("G"), // TODO i_literal(3)
+      symbol(">"),
+      symbol(">"),
+      s_literal("body"),
+      symbol("</"),
+      identifier("Elm"),
+      symbol(">"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
+  }
+
+  #[test]
+  fn jsx_short_element() {
+    // TODO this is contrived - I want to verify that /> after <Identifier returns back to parsing TS
+    let lexer = Lexer::from_text("<Elm /> > otherElement");
+    let result = vec![
+      symbol("<"),
+      identifier("Elm"),
+      symbol("/>"),
+      symbol(">"),
+      identifier("otherElement"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
   }
 
   #[test]
@@ -156,6 +203,23 @@ mod lexer_tests {
       identifier("Elm2"),
       symbol(">"),
       symbol("}"),
+      symbol("/>"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
+  }
+
+  #[test]
+  fn jsx_reserved_prop() {
+    let lexer = Lexer::from_text("<Element prop interface=\"hello\" />");
+    let result = vec![
+      symbol("<"),
+      identifier("Element"),
+      identifier("prop"), // TODO removing this one makes the test fail
+      identifier("interface"),
+      symbol("="),
+      s_literal("hello"),
       symbol("/>"),
     ]
     .into_iter();
@@ -201,12 +265,61 @@ mod lexer_tests {
   }
 
   #[test]
+  fn jsx_fragment() {
+    let lexer = Lexer::from_text("<>body {child}</>");
+    let result = vec![
+      symbol("<>"),
+      s_literal("body "),
+      symbol("{"),
+      identifier("child"),
+      symbol("}"),
+      symbol("</>"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
+  }
+
+  #[test]
+  fn comments() {
+    let lexer = Lexer::from_text(
+      "
+      foo() // ignore these
+      /* also these */
+      not_this/* this yes */()
+      /*
+      and this
+      */
+      <>/* not this */{/* but this */}</>
+    ",
+    );
+    let result = vec![
+      identifier("foo"),
+      symbol("("),
+      symbol(")"),
+      identifier("not_this"),
+      symbol("("),
+      symbol(")"),
+      symbol("<>"),
+      s_literal("/* not this */"),
+      symbol("{"),
+      symbol("}"),
+      symbol("</>"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
+  }
+
+  #[test]
   fn void() {
     let lexer = Lexer::from_text("");
     let result = vec![].into_iter();
 
     assert_equal(lexer, result);
   }
+
+  // TODO spread props <Element {...props} /> <Element lol {...props} />
 
   fn keyword(string: &str) -> LexerItem {
     Ok(Token::Keyword(string.to_string()))

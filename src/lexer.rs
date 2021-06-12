@@ -129,7 +129,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
     };
 
     if !matches!(state.jsx_transition, JSXTransition::None) {
-      // not covered
+      // not covered by tests, only for correctness (reset JSX state)
       lexer.replace_state(LexerState::Typescript(TypescriptState {
         bracket_stack: state.bracket_stack,
         jsx_transition: JSXTransition::None,
@@ -151,7 +151,6 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::None,
           }))
         } else {
-          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Element(1)))
         }
       }
@@ -170,7 +169,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
     token = Ok(Token::Literal(Literal::Str(value)));
 
     if !matches!(state.jsx_transition, JSXTransition::None) {
-      // not covered
+      // not covered by tests, only for correctness (reset JSX state)
       lexer.replace_state(LexerState::Typescript(TypescriptState {
         bracket_stack: state.bracket_stack,
         jsx_transition: JSXTransition::None,
@@ -202,19 +201,14 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
             jsx_transition: JSXTransition::Bracket,
           }))
         }
-        JSXTransition::None if raw == "<>" => {
-          // not covered
-          lexer.state.push(LexerState::Jsx(JSXState::Children))
-        }
+        JSXTransition::None if raw == "<>" => lexer.state.push(LexerState::Jsx(JSXState::Children)),
         JSXTransition::Identifier if raw == ">" => {
           lexer.state.push(LexerState::Jsx(JSXState::Children))
         }
         JSXTransition::Identifier if raw == "<" => {
-          // not covered
           lexer.state.push(LexerState::Jsx(JSXState::Element(2)))
         }
         JSXTransition::Identifier if raw == "/>" => {
-          // not covered
           lexer.replace_state(LexerState::Typescript(TypescriptState {
             bracket_stack: state.bracket_stack,
             jsx_transition: JSXTransition::None,
@@ -222,7 +216,6 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
         }
         _ => {
           if raw != "." {
-            // not covered
             lexer.replace_state(LexerState::Typescript(TypescriptState {
               bracket_stack: state.bracket_stack,
               jsx_transition: JSXTransition::None,
@@ -234,7 +227,6 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
 
     token = match &raw[..] {
       // Ignore comments until newline
-      // not covered
       s if s == "//" => {
         lexer.get_next_char_while(&mut String::new(), |c| c != '\n');
         return None;
