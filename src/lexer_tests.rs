@@ -167,6 +167,20 @@ mod lexer_tests {
     .into_iter();
 
     assert_equal(lexer, result);
+
+    // TODO this is contrived - I want to verify that /> when in JSX returns back to parsing TS
+    let lexer = Lexer::from_text("<Elm foo /> > otherElement");
+    let result = vec![
+      symbol("<"),
+      identifier("Elm"),
+      identifier("foo"),
+      symbol("/>"),
+      symbol(">"),
+      identifier("otherElement"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
   }
 
   #[test]
@@ -265,8 +279,42 @@ mod lexer_tests {
   }
 
   #[test]
+  fn jsx_nested() {
+    let lexer = Lexer::from_text(
+      "<Parent>
+        <Child foo bar>foo</Child>
+        foo bar<>yo</>foo</Parent>",
+    );
+    let result = vec![
+      symbol("<"),
+      identifier("Parent"),
+      symbol(">"),
+      symbol("<"),
+      identifier("Child"),
+      identifier("foo"),
+      identifier("bar"),
+      symbol(">"),
+      s_literal("foo"),
+      symbol("</"),
+      identifier("Child"),
+      symbol(">"),
+      s_literal("foo bar"),
+      symbol("<>"),
+      s_literal("yo"),
+      symbol("</>"),
+      s_literal("foo"),
+      symbol("</"),
+      identifier("Parent"),
+      symbol(">"),
+    ]
+    .into_iter();
+
+    assert_equal(lexer, result);
+  }
+
+  #[test]
   fn jsx_fragment() {
-    let lexer = Lexer::from_text("<>body {child}</>");
+    let lexer = Lexer::from_text("<>body {child}</> === element");
     let result = vec![
       symbol("<>"),
       s_literal("body "),
@@ -274,6 +322,8 @@ mod lexer_tests {
       identifier("child"),
       symbol("}"),
       symbol("</>"),
+      symbol("==="),
+      identifier("element"),
     ]
     .into_iter();
 
