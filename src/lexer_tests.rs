@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod lexer_tests {
   // Note this useful idiom: importing names from outer (for mod tests) scope.
-  use crate::lexer::{Lexer, LexerItem};
+  use crate::lexer::{Lexer, TokenResult};
   use crate::tokens::{Literal, Token};
   use itertools::assert_equal;
+  use std::vec::IntoIter;
 
   #[test]
   fn const_declaration() {
@@ -19,7 +20,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -33,7 +34,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -46,7 +47,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -69,7 +70,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
 
     let lexer = Lexer::from_text("3 < value || value > 5");
     let result = vec![
@@ -83,7 +84,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -103,7 +104,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -133,7 +134,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
 
     let lexer = Lexer::from_text("<Elm<G>>body</Elm>");
     let result = vec![
@@ -150,7 +151,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -166,7 +167,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
 
     // TODO this is contrived - I want to verify that /> when in JSX returns back to parsing TS
     let lexer = Lexer::from_text("<Elm foo /> > otherElement");
@@ -180,7 +181,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -221,7 +222,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -238,7 +239,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -275,7 +276,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -309,7 +310,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -327,7 +328,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -358,7 +359,7 @@ mod lexer_tests {
     ]
     .into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   #[test]
@@ -366,24 +367,28 @@ mod lexer_tests {
     let lexer = Lexer::from_text("");
     let result = vec![].into_iter();
 
-    assert_equal(lexer, result);
+    assert_result(lexer, result);
   }
 
   // TODO spread props <Element {...props} /> <Element lol {...props} />
 
-  fn keyword(string: &str) -> LexerItem {
+  fn assert_result(lexer: Lexer, result: IntoIter<TokenResult>) {
+    assert_equal(lexer.map(|v| v.token), result);
+  }
+
+  fn keyword(string: &str) -> TokenResult {
     Ok(Token::Keyword(string.to_string()))
   }
-  fn identifier(string: &str) -> LexerItem {
+  fn identifier(string: &str) -> TokenResult {
     Ok(Token::Identifier(string.to_string()))
   }
-  fn symbol(string: &str) -> LexerItem {
+  fn symbol(string: &str) -> TokenResult {
     Ok(Token::Symbol(string.to_string()))
   }
-  fn i_literal(value: i32) -> LexerItem {
+  fn i_literal(value: i32) -> TokenResult {
     Ok(Token::Literal(Literal::Integer(value)))
   }
-  fn s_literal(string: &str) -> LexerItem {
+  fn s_literal(string: &str) -> TokenResult {
     Ok(Token::Literal(Literal::Str(string.to_string())))
   }
 }

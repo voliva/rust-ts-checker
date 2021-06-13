@@ -12,10 +12,16 @@ fn main() {
 
   println!("Opened in {}ys", now.elapsed().as_micros());
 
-  for token in lexer {
-    match token {
-      Ok(t) => println!("{:?}", t),
-      Err(e) => println!("Error! {}", e),
+  for located_token in lexer {
+    match located_token.token {
+      Ok(t) => println!(
+        "line={} col={} {:?}",
+        located_token.line, located_token.col, t
+      ),
+      Err(e) => println!(
+        "line={} col={} Error! {}",
+        located_token.line, located_token.col, e,
+      ),
     }
   }
 

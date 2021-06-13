@@ -6,6 +6,8 @@ use std::{fs, io};
 pub struct Lexer {
   raw_data: Peekable<IntoIter<char>>,
   state: Vec<LexerState>,
+  line: i32,
+  col: i32,
 }
 
 #[derive(Copy, Clone, Debug)]
@@ -52,6 +54,8 @@ impl Lexer {
         bracket_stack: 1,
         jsx_transition: JSXTransition::None,
       })],
+      line: 1,
+      col: 1,
     }
   }
 
@@ -67,11 +71,28 @@ impl Lexer {
       match self.raw_data.peek() {
         Some(c) if cond(*c) => {
           raw_token.push(*c);
-          self.raw_data.next();
+          self.next_char();
         }
         _ => break,
       }
     }
+  }
+
+  fn next_char(&mut self) -> Option<char> {
+    let result = self.raw_data.next();
+
+    match result {
+      Some(r) => {
+        if r == '\n' {
+          self.line = self.line + 1;
+          self.col = 1;
+        } else {
+          self.col = self.col + 1;
+        }
+      }
+      _ => {}
+    };
+    return result;
   }
 
   fn replace_state(&mut self, state: LexerState) {
@@ -80,14 +101,33 @@ impl Lexer {
   }
 }
 
-pub type LexerItem = std::result::Result<Token, String>;
+pub type TokenResult = std::result::Result<Token, String>;
+
+pub struct LocatedToken {
+  pub line: i32,
+  pub col: i32,
+  pub token: TokenResult,
+}
 
 impl Iterator for Lexer {
-  type Item = LexerItem;
+  type Item = LocatedToken;
 
-  fn next(&mut self) -> Option<LexerItem> {
+  fn next(&mut self) -> Option<LocatedToken> {
     loop {
+      loop {
+        match self.raw_data.peek() {
+          Some(c) if c.is_whitespace() => {
+            self.next_char();
+            continue;
+          }
+          _ => break,
+        }
+      }
+
       let last = self.state.len() - 1;
+      let line = self.line;
+      let col = self.col;
+
       // println!("{:?}", self.state[last]);
       let maybe_result = match self.state[last] {
         LexerState::Typescript(n) => next_typescript(self, n),
@@ -97,19 +137,26 @@ impl Iterator for Lexer {
       match maybe_result {
         None => {}
         Some(r) => {
-          break r;
+          break match r {
+            None => None,
+            Some(t) => Some(LocatedToken {
+              line: line,
+              col: col,
+              token: t,
+            }),
+          }
         }
       }
     }
   }
 }
 
-fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<LexerItem>> {
-  let token: LexerItem;
+fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<TokenResult>> {
+  let token: TokenResult;
 
   let first_char: char;
   loop {
-    match lexer.raw_data.next() {
+    match lexer.next_char() {
       Some(c) if c.is_whitespace() => continue,
       Some(c) => {
         first_char = c;
@@ -166,7 +213,7 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
     let mut value = String::new();
     lexer.get_next_char_while(&mut value, |c| c != first_char);
     // We need to exclude the last closing character
-    lexer.raw_data.next();
+    lexer.next_char();
     token = Ok(Token::Literal(Literal::Str(value)));
 
     if !matches!(state.jsx_transition, JSXTransition::None) {
@@ -246,12 +293,12 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
         loop {
           match lexer.raw_data.peek() {
             Some('/') if prev == '*' => {
-              lexer.raw_data.next();
+              lexer.next_char();
               break;
             }
             Some(c) => {
               prev = *c;
-              lexer.raw_data.next();
+              lexer.next_char();
             }
             _ => break,
           }
@@ -266,10 +313,10 @@ fn next_typescript(lexer: &mut Lexer, state: TypescriptState) -> Option<Option<L
   return Some(Some(token));
 }
 
-fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
+fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<TokenResult>> {
   let first_char: char;
   loop {
-    match lexer.raw_data.next() {
+    match lexer.next_char() {
       Some(c) if c.is_whitespace() => continue,
       Some(c) => {
         first_char = c;
@@ -279,7 +326,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
     }
   }
 
-  let token: LexerItem = match state {
+  let token: TokenResult = match state {
     JSXState::Element(element_stack) => {
       /* Valid tokens are just a few:
        * <element value="asdf" typescript={123}>
@@ -299,7 +346,7 @@ fn next_jsx(lexer: &mut Lexer, state: JSXState) -> Option<Option<LexerItem>> {
       } else if first_char == '"' || first_char == '\'' {
         let mut value = String::new();
         lexer.get_next_char_while(&mut value, |c| c != first_char);
-        lexer.raw_data.next();
+        lexer.next_char();
 
         Ok(Token::Literal(Literal::Str(value)))
       } else {
@@ -414,7 +461,7 @@ fn read_symbol(lexer: &mut Lexer, first_char: &char) -> String {
     }
 
     if VALID_SYMBOLS.contains(&&raw[..]) {
-      lexer.raw_data.next();
+      lexer.next_char();
     } else {
       raw.pop();
       break;
