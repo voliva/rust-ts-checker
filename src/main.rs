@@ -1,11 +1,30 @@
 mod lexer;
 mod lexer_tests;
+mod parser;
 mod tokens;
 
 use crate::lexer::Lexer;
+use crate::parser::MatcherType;
+use crate::parser::Sequence;
+use crate::parser::Terminal;
+use crate::tokens::Literal;
+use crate::tokens::Token;
 use std::time::Instant;
 
 fn main() {
+  let mut matcher = Sequence::new(vec![
+    Terminal::<Token>::matcher(|_| true),
+    Terminal::<Token>::matcher(|_| false),
+  ]);
+
+  let result = matcher.next2(&Token::Literal(Literal::Str(String::from("asdf"))));
+  println!("{:?}", result);
+  let result = matcher.next2(&Token::Literal(Literal::Str(String::from("fdsa"))));
+  println!("{:?}", result);
+  let result = matcher.next2(&Token::Literal(Literal::Str(String::from("haha"))));
+  println!("{:?}", result);
+
+  /*
   let now = Instant::now();
 
   let lexer = Lexer::from_file("./program.tsx").unwrap();
@@ -26,4 +45,5 @@ fn main() {
   }
 
   println!("Complete in {}ys", now.elapsed().as_micros());
+  */
 }
