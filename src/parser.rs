@@ -59,6 +59,16 @@ pub enum MatcherResult<Token> {
   Value(MatchResultValue<Token>),
 }
 
+impl<Token> MatcherResult<Token> {
+  pub fn value(self) -> Option<MatchResultValue<Token>> {
+    match self {
+      MatcherResult::End(v) => Some(v),
+      MatcherResult::Value(v) => Some(v),
+      _ => None,
+    }
+  }
+}
+
 #[derive(Debug)]
 pub enum MatchResultValue<Token> {
   String(String),
@@ -323,4 +333,15 @@ impl<Token: Clone> Matcher<Token> for Terminal<Token> {
   fn reset(&mut self) {
     self.executed = false
   }
+}
+
+#[macro_export]
+macro_rules! unwrap_enum {
+  ( $r:expr, $m:path ) => {{
+    (match $r {
+      $m(v) => Some(v),
+      _ => None,
+    })
+    .unwrap()
+  }};
 }

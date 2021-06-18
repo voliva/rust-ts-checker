@@ -4,11 +4,8 @@ mod parser;
 mod tokens;
 
 use crate::lexer::Lexer;
-use crate::parser::MatcherType;
-use crate::parser::Sequence;
-use crate::parser::Terminal;
-use crate::tokens::Literal;
-use crate::tokens::Token;
+use crate::parser::{MatchResultValue, Sequence, Terminal};
+use crate::tokens::{Literal, Token};
 use std::time::Instant;
 
 fn main() {
@@ -23,6 +20,14 @@ fn main() {
   println!("{:?}", result);
   let result = matcher.next2(&Token::Literal(Literal::Str(String::from("haha"))));
   println!("{:?}", result);
+
+  // let unwrapped = (match result.value() {
+  //   Some(MatchResultValue::Vector(v)) => Some(v),
+  //   _ => None,
+  // })
+  // .unwrap();
+
+  // let res = unwrap_enum!(result.value().unwrap(), MatchResultValue::Vector);
 
   /*
   let now = Instant::now();
