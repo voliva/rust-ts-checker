@@ -51,6 +51,8 @@ use std::marker::PhantomData;
  * To backtrack, maybe have an utility "split" which feeds each token to every posibility, and keeps track of the aggregated state.
  */
 
+/// Global ///
+
 #[derive(Debug)]
 pub enum MatcherResult<Token> {
   Rejected,
@@ -90,26 +92,10 @@ impl<Token: Clone> Clone for MatchResultValue<Token> {
   }
 }
 
-/// Possiblity 1 ///
-
-// enum MatcherDef<Token> {
-//   Sequence(Vec<MatcherDef<Token>>),
-//   Optional(Box<MatcherDef<Token>>),
-//   Loop(Box<MatcherDef<Token>>),
-//   OneOf(Vec<MatcherDef<Token>>),
-//   MatchFn(fn(Token) -> Option<MatchResult<Token>>),
-//   Matcher(Box<Matcher<Token>>),
-// }
-
-// struct Matcher<Token> {
-//   matcherDef: MatcherDef<Token>,
-// }
-
-/// Possiblity 2 ///
-
 pub enum MatcherType<Token> {
   OneOf(OneOf<Token>),
   Sequence(Sequence<Token>),
+  Loop(Loop<Token>),
   Terminal(Terminal<Token>),
   _Marker(PhantomData<Token>),
 }
@@ -117,16 +103,18 @@ pub enum MatcherType<Token> {
 impl<Token: Clone> MatcherType<Token> {
   fn reset(&mut self) {
     match self {
-      // MatcherType::OneOf(v) => v.reset(),
+      MatcherType::OneOf(v) => v.reset(),
       MatcherType::Sequence(v) => v.reset(),
+      MatcherType::Loop(v) => v.reset(),
       MatcherType::Terminal(v) => v.reset(),
       _ => {}
     }
   }
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     match self {
-      // MatcherType::OneOf(v) => v.next(token),
+      MatcherType::OneOf(v) => v.next(token),
       MatcherType::Sequence(v) => v.next(token),
+      MatcherType::Loop(v) => v.next(token),
       MatcherType::Terminal(v) => v.next(token),
       _ => MatcherResult::Rejected,
     }
@@ -138,9 +126,21 @@ trait Matcher<Token> {
   fn reset(&mut self);
 }
 
-struct OneOf<Token> {
+/// OneOf ///
+
+pub struct OneOf<Token> {
   matchers: Vec<MatcherType<Token>>,
 }
+
+impl<Token> OneOf<Token> {
+  pub fn new(matchers: Vec<MatcherType<Token>>) -> Self {
+    Self { matchers }
+  }
+  pub fn matcher(matchers: Vec<MatcherType<Token>>) -> MatcherType<Token> {
+    MatcherType::OneOf(OneOf::new(matchers))
+  }
+}
+
 impl<Token: Clone> Matcher<Token> for OneOf<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     let mut result: Option<MatchResultValue<Token>> = None;
@@ -189,6 +189,8 @@ impl<Token: Clone> Matcher<Token> for OneOf<Token> {
   }
 }
 
+/// Sequence ///
+
 pub struct Sequence<Token> {
   sequence_matchers: Vec<SequenceMatcher<Token>>,
 }
@@ -212,6 +214,10 @@ impl<Token: Clone> Sequence<Token> {
     };
     result.sequence_matchers[0].is_head = true;
     return result;
+  }
+
+  pub fn matcher(matchers: Vec<MatcherType<Token>>) -> MatcherType<Token> {
+    MatcherType::Sequence(Self::new(matchers))
   }
 
   pub fn next2(&mut self, token: &Token) -> MatcherResult<Token> {
@@ -247,15 +253,18 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
         MatcherResult::End(r) => {
           sequence_matcher.result = Some(r);
           sequence_matcher.is_head = false;
+          // We have a new value: Reset all following matchers
           for j in (i + 1)..self.sequence_matchers.len() {
             self.sequence_matchers[j].reset();
           }
+          // Then set head the next one
           if i + 1 < self.sequence_matchers.len() {
             self.sequence_matchers[i + 1].is_head = true;
           }
         }
         MatcherResult::Value(v) => {
           sequence_matcher.result = Some(v);
+          // Same as before, but keeping this as head.
           for j in (i + 1)..self.sequence_matchers.len() {
             self.sequence_matchers[j].reset();
           }
@@ -300,6 +309,51 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
     self.sequence_matchers[0].is_head = true;
   }
 }
+
+/// Loop ///
+pub struct Loop<Token> {
+  matcher: Box<MatcherType<Token>>,
+  results: Vec<MatchResultValue<Token>>,
+}
+
+impl<Token> Loop<Token> {
+  pub fn new(matcher: MatcherType<Token>) -> Self {
+    Self {
+      matcher: Box::new(matcher),
+      results: Vec::new(),
+    }
+  }
+  pub fn matcher(matcher: MatcherType<Token>) -> MatcherType<Token> {
+    MatcherType::Loop(Loop::new(matcher))
+  }
+}
+
+impl<Token: Clone> Matcher<Token> for Loop<Token> {
+  fn next(&mut self, token: &Token) -> MatcherResult<Token> {
+    let result = self.matcher.next(token);
+
+    match result {
+      MatcherResult::Rejected => MatcherResult::Rejected,
+      MatcherResult::Accepted => MatcherResult::Accepted,
+      MatcherResult::Value(v) => {
+        self.results.push(v);
+        self.matcher.reset();
+        MatcherResult::Value(MatchResultValue::Vector(self.results.clone()))
+      }
+      MatcherResult::End(v) => {
+        self.results.push(v);
+        self.matcher.reset();
+        MatcherResult::Value(MatchResultValue::Vector(self.results.clone()))
+      }
+    }
+  }
+  fn reset(&mut self) {
+    self.matcher.reset();
+    self.results = Vec::new();
+  }
+}
+
+/// Terminal ///
 
 pub struct Terminal<Token> {
   match_fn: fn(&Token) -> bool,
