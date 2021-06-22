@@ -425,11 +425,34 @@ impl<Token: Clone + Debug> Matcher<Token> for Optional<Token> {
     self.has_emitted = false;
   }
 }
+
 #[macro_export]
 macro_rules! unwrap_enum {
   ( $r:expr, $m:path ) => {{
-    (match $r {
+    (match &$r {
       $m(v) => Some(v),
+      _ => None,
+    })
+    .unwrap()
+  }};
+}
+
+#[macro_export]
+macro_rules! unwrap_branch {
+  ( $r:expr ) => {{
+    (match &$r {
+      MatchResultValue::Branch(v, t) => Some((v, t)),
+      _ => None,
+    })
+    .unwrap()
+  }};
+}
+
+#[macro_export]
+macro_rules! unwrap_match {
+  ( $r:expr, $p: pat => $v: expr ) => {{
+    (match &$r {
+      $p => Some($v),
       _ => None,
     })
     .unwrap()
