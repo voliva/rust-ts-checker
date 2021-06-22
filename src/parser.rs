@@ -1,59 +1,9 @@
-use std::collections::HashMap;
+use core::fmt::Debug;
 use std::marker::PhantomData;
-
-/**
- * Idea I have is that you can define a parser as with a set of chained rules:
- *
- * import statement:
- * - sequence // <- one-by-one
- *  - keyword("import")
- *  - oneOf // <-
- *   - sequence
- *    - identifier
- *    - optional
- *     - sequence
- *      - symbol(",")
- *      - {namedImports}
- *   - {namedImports}
- *   - sequence
- *    - symbol("*")
- *    - keyword("as")
- *    - identifier
- *  - keyword("from")
- *  - literal(str)
- *
- * namedImports:
- * - sequence
- *  - symbol("{")
- *  - optional
- *   - sequence
- *    - identifier
- *    - optional
- *     - symbol(":")
- *     - identifier
- *   - loop (loops can also take 0) <=== Q: how does a loop decide to begin a new loop? On the first value? but then it won't work with optional below! and if not, how does the outer loop(loop(...)) behave?
- *    - sequence
- *     - symbol(",")
- *     - identifier
- *     - optional <=== TODO this one is hard, because it effects sequence, or not straight forward. Otherwise transform to oneOf(sequence(",", identifier), sequence(",", identifier, ":", identifier))
- *      - symbol(":")
- *      - identifier
- *  - symbol("}")
- *
- * And then give you whatever has been captured in each step, or None if it didn't match
- *
- * Maybe it would be nice to go step-by-step. So you "feed" it a token, and it can give you:
- * - Rejected -> end state, it didn't match anything
- * - End([value]) -> end state, it matched something
- * - Accepted -> accepted
- * - Value([value]) -> accepted and it has a value, but can take more tokens (loops or optionals)
- *
- * To backtrack, maybe have an utility "split" which feeds each token to every posibility, and keeps track of the aggregated state.
- */
 
 /// Global ///
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatcherResult<Token> {
   Rejected,
   End(MatchResultValue<Token>),
@@ -71,23 +21,21 @@ impl<Token> MatcherResult<Token> {
   }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum MatchResultValue<Token> {
-  String(String),
-  Number(i32),
   Token(Token),
-  Map(HashMap<String, MatchResultValue<Token>>),
-  Vector(Vec<MatchResultValue<Token>>),
+  Vector(Vec<MatchResultValue<Token>>),         // Loops
+  Option(Option<Box<MatchResultValue<Token>>>), // Optionals
+  Branch(usize, Box<MatchResultValue<Token>>),  // OneOf
 }
 
-impl<Token: Clone> Clone for MatchResultValue<Token> {
+impl<Token: Clone + Debug> Clone for MatchResultValue<Token> {
   fn clone(&self) -> MatchResultValue<Token> {
     match self {
-      MatchResultValue::String(s) => MatchResultValue::String(String::from(s)),
-      MatchResultValue::Number(v) => MatchResultValue::Number(*v),
       MatchResultValue::Token(v) => MatchResultValue::Token(v.clone()),
-      MatchResultValue::Map(v) => MatchResultValue::Map(v.clone()),
       MatchResultValue::Vector(v) => MatchResultValue::Vector(v.clone()),
+      MatchResultValue::Option(v) => MatchResultValue::Option(v.clone()),
+      MatchResultValue::Branch(i, v) => MatchResultValue::Branch(*i, v.clone()),
     }
   }
 }
@@ -97,31 +45,34 @@ pub enum MatcherType<Token> {
   Sequence(Sequence<Token>),
   Loop(Loop<Token>),
   Terminal(Terminal<Token>),
+  Optional(Optional<Token>),
   _Marker(PhantomData<Token>),
 }
 
-impl<Token: Clone> MatcherType<Token> {
-  fn reset(&mut self) {
+impl<Token: Clone + Debug> MatcherType<Token> {
+  pub fn reset(&mut self) {
     match self {
       MatcherType::OneOf(v) => v.reset(),
       MatcherType::Sequence(v) => v.reset(),
       MatcherType::Loop(v) => v.reset(),
       MatcherType::Terminal(v) => v.reset(),
+      MatcherType::Optional(v) => v.reset(),
       _ => {}
     }
   }
-  fn next(&mut self, token: &Token) -> MatcherResult<Token> {
+  pub fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     match self {
       MatcherType::OneOf(v) => v.next(token),
       MatcherType::Sequence(v) => v.next(token),
       MatcherType::Loop(v) => v.next(token),
       MatcherType::Terminal(v) => v.next(token),
+      MatcherType::Optional(v) => v.next(token),
       _ => MatcherResult::Rejected,
     }
   }
 }
 
-trait Matcher<Token> {
+pub trait Matcher<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token>;
   fn reset(&mut self);
 }
@@ -141,22 +92,24 @@ impl<Token> OneOf<Token> {
   }
 }
 
-impl<Token: Clone> Matcher<Token> for OneOf<Token> {
+impl<Token: Clone + Debug> Matcher<Token> for OneOf<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
-    let mut result: Option<MatchResultValue<Token>> = None;
+    let mut result: Option<(usize, MatchResultValue<Token>)> = None;
     let mut has_accepted = false;
 
-    for matcher in &mut self.matchers {
+    let length = self.matchers.len();
+    for i in 0..length {
+      let matcher = &mut self.matchers[i];
       match (matcher.next(&token), &result) {
         (MatcherResult::Accepted, _) => {
           has_accepted = true;
         }
         (MatcherResult::End(r), None) => {
-          result = Some(r.clone());
+          result = Some((i, r.clone()));
         }
         (MatcherResult::Value(v), None) => {
           has_accepted = true;
-          result = Some(v.clone());
+          result = Some((i, v.clone()));
         }
         (MatcherResult::Value(_), Some(_)) => {
           has_accepted = true;
@@ -166,11 +119,12 @@ impl<Token: Clone> Matcher<Token> for OneOf<Token> {
     }
 
     match &mut result {
-      Some(v) => {
+      Some((i, v)) => {
+        let value = MatchResultValue::Branch(*i, Box::new(v.clone()));
         if has_accepted {
-          MatcherResult::Value(v.clone())
+          MatcherResult::Value(value)
         } else {
-          MatcherResult::End(v.clone())
+          MatcherResult::End(value)
         }
       }
       None => {
@@ -200,7 +154,7 @@ struct SequenceMatcher<Token> {
   is_head: bool,
 }
 
-impl<Token: Clone> Sequence<Token> {
+impl<Token: Clone + Debug> Sequence<Token> {
   pub fn new(matchers: Vec<MatcherType<Token>>) -> Self {
     let mut result = Sequence {
       sequence_matchers: matchers
@@ -213,6 +167,7 @@ impl<Token: Clone> Sequence<Token> {
         .collect(),
     };
     result.sequence_matchers[0].is_head = true;
+    result.propagate_optional_heads();
     return result;
   }
 
@@ -220,26 +175,36 @@ impl<Token: Clone> Sequence<Token> {
     MatcherType::Sequence(Self::new(matchers))
   }
 
-  pub fn next2(&mut self, token: &Token) -> MatcherResult<Token> {
-    self.next(token)
+  fn propagate_optional_heads(&mut self) {
+    for i in 1..self.sequence_matchers.len() {
+      let prev = &self.sequence_matchers[i - 1];
+      if prev.is_head && matches!(prev.matcher, MatcherType::Optional(_)) {
+        self.sequence_matchers[i].is_head = true;
+      }
+    }
   }
 }
 
-impl<Token: Clone> SequenceMatcher<Token> {
+impl<Token: Clone + Debug> SequenceMatcher<Token> {
   fn reset(&mut self) {
     self.is_head = false;
-    self.result = None;
     self.matcher.reset();
+    self.result = if matches!(self.matcher, MatcherType::Optional(_)) {
+      Some(MatchResultValue::Option(None))
+    } else {
+      None
+    }
   }
 }
 
-impl<Token: Clone> Matcher<Token> for Sequence<Token> {
+impl<Token: Clone + Debug> Matcher<Token> for Sequence<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     let has_head = self.sequence_matchers.iter().any(|m| m.is_head);
     if !has_head {
       return MatcherResult::Rejected;
     }
 
+    let mut has_updated = false;
     for i in (0..self.sequence_matchers.len()).rev() {
       let sequence_matcher = &mut self.sequence_matchers[i];
       if !sequence_matcher.is_head {
@@ -250,7 +215,14 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
         MatcherResult::Rejected => {
           sequence_matcher.is_head = false;
         }
+        MatcherResult::End(r)
+          if matches!(sequence_matcher.matcher, MatcherType::Optional(_))
+            && matches!(r, MatchResultValue::Option(None)) =>
+        {
+          sequence_matcher.is_head = false;
+        }
         MatcherResult::End(r) => {
+          has_updated = true;
           sequence_matcher.result = Some(r);
           sequence_matcher.is_head = false;
           // We have a new value: Reset all following matchers
@@ -263,6 +235,7 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
           }
         }
         MatcherResult::Value(v) => {
+          has_updated = true;
           sequence_matcher.result = Some(v);
           // Same as before, but keeping this as head.
           for j in (i + 1)..self.sequence_matchers.len() {
@@ -276,29 +249,36 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
       }
     }
 
+    self.propagate_optional_heads();
+
     let has_head = self.sequence_matchers.iter().any(|m| m.is_head);
-    let last_matcher = &mut self.sequence_matchers.last().unwrap();
-    match &last_matcher.result {
-      Some(_) => {
-        let result: MatchResultValue<Token> = MatchResultValue::Vector(
-          self
-            .sequence_matchers
-            .iter()
-            .map(|m| (&m.result).as_ref().unwrap().clone())
-            .collect(),
-        );
-        if has_head {
-          MatcherResult::Value(result)
-        } else {
-          MatcherResult::End(result)
-        }
+    let is_complete = !self
+      .sequence_matchers
+      .iter()
+      .any(|m| matches!(m.result, None));
+    // println!("has_head: {}, is_complete: {}", has_head, is_complete);
+    if is_complete && has_updated {
+      let result: MatchResultValue<Token> = MatchResultValue::Vector(
+        self
+          .sequence_matchers
+          .iter()
+          .map(|m| (&m.result).as_ref().unwrap().clone())
+          .collect(),
+      );
+      if has_head {
+        // println!("value {:?}", result);
+        MatcherResult::Value(result)
+      } else {
+        // println!("end {:?}", result);
+        MatcherResult::End(result)
       }
-      None => {
-        if has_head {
-          MatcherResult::Accepted
-        } else {
-          MatcherResult::Rejected
-        }
+    } else {
+      if has_head {
+        // println!("accepted");
+        MatcherResult::Accepted
+      } else {
+        // println!("rejected");
+        MatcherResult::Rejected
       }
     }
   }
@@ -307,6 +287,7 @@ impl<Token: Clone> Matcher<Token> for Sequence<Token> {
       sequence_matcher.reset();
     }
     self.sequence_matchers[0].is_head = true;
+    self.propagate_optional_heads()
   }
 }
 
@@ -328,7 +309,7 @@ impl<Token> Loop<Token> {
   }
 }
 
-impl<Token: Clone> Matcher<Token> for Loop<Token> {
+impl<Token: Clone + Debug> Matcher<Token> for Loop<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     let result = self.matcher.next(token);
 
@@ -360,7 +341,7 @@ pub struct Terminal<Token> {
   executed: bool,
 }
 
-impl<Token> Terminal<Token> {
+impl<Token: Clone + Debug> Terminal<Token> {
   pub fn new(match_fn: fn(&Token) -> bool) -> Self {
     Self {
       match_fn,
@@ -372,7 +353,7 @@ impl<Token> Terminal<Token> {
   }
 }
 
-impl<Token: Clone> Matcher<Token> for Terminal<Token> {
+impl<Token: Clone + Debug> Matcher<Token> for Terminal<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
     if self.executed {
       return MatcherResult::Rejected;
@@ -389,6 +370,61 @@ impl<Token: Clone> Matcher<Token> for Terminal<Token> {
   }
 }
 
+// impl<'a, Token: Clone + Debug> Matcher<Token> for &'a mut Terminal<Token> {
+//   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
+//     Terminal::next(*self, token)
+//   }
+//   fn reset(&mut self) {
+//     Terminal::reset(*self)
+//   }
+// }
+
+/// Optional ///
+pub struct Optional<Token> {
+  matcher: Box<MatcherType<Token>>,
+  has_emitted: bool,
+}
+
+impl<Token: Clone + Debug> Optional<Token> {
+  pub fn new(matcher: MatcherType<Token>) -> Self {
+    Self {
+      matcher: Box::new(matcher),
+      has_emitted: false,
+    }
+  }
+  pub fn matcher(matcher: MatcherType<Token>) -> MatcherType<Token> {
+    MatcherType::Optional(Optional::new(matcher))
+  }
+}
+
+impl<Token: Clone + Debug> Matcher<Token> for Optional<Token> {
+  fn next(&mut self, token: &Token) -> MatcherResult<Token> {
+    let result = self.matcher.next(token);
+
+    match result {
+      MatcherResult::Rejected => {
+        if self.has_emitted {
+          MatcherResult::Rejected
+        } else {
+          MatcherResult::End(MatchResultValue::Option(None))
+        }
+      }
+      MatcherResult::Accepted => MatcherResult::Accepted,
+      MatcherResult::Value(v) => {
+        self.has_emitted = true;
+        MatcherResult::Value(MatchResultValue::Option(Some(Box::new(v))))
+      }
+      MatcherResult::End(v) => {
+        self.has_emitted = true;
+        MatcherResult::End(MatchResultValue::Option(Some(Box::new(v))))
+      }
+    }
+  }
+  fn reset(&mut self) {
+    self.matcher.reset();
+    self.has_emitted = false;
+  }
+}
 #[macro_export]
 macro_rules! unwrap_enum {
   ( $r:expr, $m:path ) => {{

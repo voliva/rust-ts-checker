@@ -1,11 +1,12 @@
 mod lexer;
 mod lexer_tests;
 mod parser;
+mod parser_tests;
 mod tokens;
 
 use crate::lexer::Lexer;
 use crate::parser::MatcherType;
-use crate::parser::{Loop, MatcherResult, OneOf, Sequence, Terminal};
+use crate::parser::{Loop, Matcher, MatcherResult, OneOf, Optional, Sequence, Terminal};
 use crate::tokens::{Literal, Token};
 use std::time::Instant;
 
@@ -14,15 +15,14 @@ fn main() {
     Terminal::matcher(|token| (matches!(token, Token::Keyword(x) if x == "import"))),
     OneOf::matcher(vec![
       // Default export
-      OneOf::matcher(vec![
+      Sequence::matcher(vec![
         // something
         Terminal::matcher(|token| (matches!(token, Token::Identifier(_)))),
-        // something, { namedImport }
-        Sequence::matcher(vec![
-          Terminal::matcher(|token| (matches!(token, Token::Identifier(_)))),
+        // , { namedImport }
+        Optional::matcher(Sequence::matcher(vec![
           Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == ","))),
           named_imports(),
-        ]),
+        ])),
       ]),
       named_imports(),
       // * as something
@@ -39,7 +39,7 @@ fn main() {
   let now = Instant::now();
 
   // let lexer = Lexer::from_file("./program.tsx").unwrap();
-  let lexer = Lexer::from_text("import { foo } from 'react'");
+  let lexer = Lexer::from_text("import { foo: foo2, bar } from 'react'");
 
   println!("Opened in {}ys", now.elapsed().as_micros());
 
@@ -47,7 +47,7 @@ fn main() {
   for located_token in lexer {
     match located_token.token {
       Ok(t) => {
-        result = import_statement.next2(&t);
+        result = import_statement.next(&t);
         println!("{:?} -> {:?}", t, result);
         //   println!(
         //   "line={} col={} {:?}",
@@ -67,34 +67,25 @@ fn main() {
 }
 
 fn import_unit() -> MatcherType<Token> {
-  OneOf::matcher(vec![
-    // something
+  Sequence::matcher(vec![
     Terminal::matcher(|token| (matches!(token, Token::Identifier(_)))),
-    // something: alias
-    Sequence::matcher(vec![
-      Terminal::matcher(|token| (matches!(token, Token::Identifier(_)))),
+    Optional::matcher(Sequence::matcher(vec![
       Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == ":"))),
       Terminal::matcher(|token| (matches!(token, Token::Identifier(_)))),
-    ]),
+    ])),
   ])
 }
 
 fn named_imports() -> MatcherType<Token> {
-  OneOf::matcher(vec![
-    // {}
-    Sequence::matcher(vec![
-      Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "{"))),
-      Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "}"))),
-    ]),
-    // { importUnit, importUnit, ... }
-    Sequence::matcher(vec![
-      Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "{"))),
+  Sequence::matcher(vec![
+    Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "{"))),
+    Optional::matcher(Sequence::matcher(vec![
       import_unit(),
-      Loop::matcher(Sequence::matcher(vec![
+      Optional::matcher(Loop::matcher(Sequence::matcher(vec![
         Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == ","))),
         import_unit(),
-      ])),
-      Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "}"))),
-    ]),
+      ]))),
+    ])),
+    Terminal::matcher(|token| (matches!(token, Token::Symbol(x) if x == "}"))),
   ])
 }
