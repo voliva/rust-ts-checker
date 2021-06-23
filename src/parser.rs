@@ -11,15 +11,15 @@ pub enum MatcherResult<Token> {
   Value(MatchResultValue<Token>),
 }
 
-impl<Token> MatcherResult<Token> {
-  pub fn value(self) -> Option<MatchResultValue<Token>> {
-    match self {
-      MatcherResult::End(v) => Some(v),
-      MatcherResult::Value(v) => Some(v),
-      _ => None,
-    }
-  }
-}
+// impl<Token> MatcherResult<Token> {
+//   pub fn value(self) -> Option<MatchResultValue<Token>> {
+//     match self {
+//       MatcherResult::End(v) => Some(v),
+//       MatcherResult::Value(v) => Some(v),
+//       _ => None,
+//     }
+//   }
+// }
 
 #[derive(Debug, PartialEq)]
 pub enum MatchResultValue<Token> {

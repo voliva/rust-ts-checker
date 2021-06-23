@@ -16,7 +16,7 @@ pub struct SourceFile {
 #[derive(Debug)]
 enum SourceFileElement {
   ImportDeclaration(ImportDeclaration),
-  FunctionDeclaration(FunctionDeclaration),
+  // FunctionDeclaration(FunctionDeclaration),
 }
 
 impl From<Lexer> for SourceFile {
@@ -189,7 +189,19 @@ fn parse_named_imports(value: &MatchResultValue<Token>) -> Vec<NamedImport> {
   match unwrap_enum!(source[1], MatchResultValue::Option) {
     None => vec![],
     Some(v) => {
-      vec![]
+      let seq = unwrap_enum!(v.deref(), MatchResultValue::Vector);
+      let mut result = vec![parse_import_unit(&seq[0])];
+      let tail = match unwrap_enum!(seq[1], MatchResultValue::Option) {
+        Some(v) => unwrap_enum!(v.deref(), MatchResultValue::Vector).clone(),
+        None => vec![],
+      };
+
+      for s in tail {
+        let seq = unwrap_enum!(s, MatchResultValue::Vector);
+        result.push(parse_import_unit(&seq[1]))
+      }
+
+      result
     }
   }
 }
@@ -203,6 +215,26 @@ fn import_unit() -> MatcherType<Token> {
     ])),
   ])
 }
+fn parse_import_unit(value: &MatchResultValue<Token>) -> NamedImport {
+  let source = unwrap_enum!(value, MatchResultValue::Vector);
+  let original =
+    unwrap_match!(source[0], MatchResultValue::Token(Token::Identifier(i)) => i.clone());
+
+  match unwrap_enum!(source[1], MatchResultValue::Option) {
+    None => NamedImport {
+      original,
+      alias: None,
+    },
+    Some(v) => {
+      let seq = unwrap_enum!(v.deref(), MatchResultValue::Vector);
+      let alias = unwrap_match!(seq[1], MatchResultValue::Token(Token::Identifier(i)) => i.clone());
+      NamedImport {
+        original,
+        alias: Some(alias),
+      }
+    }
+  }
+}
 
 #[derive(Debug)]
 pub struct FunctionDeclaration {}
@@ -210,11 +242,11 @@ pub struct FunctionDeclaration {}
 /// Utils
 fn peek_token(lexer: &mut Peekable<Lexer>) -> Result<(Token, i32, i32), String> {
   match lexer.peek() {
-    Some(locatedToken) => match &locatedToken.token {
-      Ok(t) => Ok((t.clone(), locatedToken.line, locatedToken.col)),
+    Some(located_token) => match &located_token.token {
+      Ok(t) => Ok((t.clone(), located_token.line, located_token.col)),
       Err(t) => Err(format!(
         "line: {} col: {} ImportDeclaration: {}",
-        locatedToken.line, locatedToken.col, t
+        located_token.line, located_token.col, t
       )),
     },
     _ => Err("Unexpected EOF".to_owned()),
@@ -223,11 +255,11 @@ fn peek_token(lexer: &mut Peekable<Lexer>) -> Result<(Token, i32, i32), String> 
 
 fn read_token(lexer: &mut Peekable<Lexer>) -> Result<(Token, i32, i32), String> {
   match lexer.next() {
-    Some(locatedToken) => match &locatedToken.token {
-      Ok(t) => Ok((t.clone(), locatedToken.line, locatedToken.col)),
+    Some(located_token) => match &located_token.token {
+      Ok(t) => Ok((t.clone(), located_token.line, located_token.col)),
       Err(t) => Err(format!(
         "line: {} col: {} ImportDeclaration: {}",
-        locatedToken.line, locatedToken.col, t
+        located_token.line, located_token.col, t
       )),
     },
     _ => Err("Unexpected EOF".to_owned()),

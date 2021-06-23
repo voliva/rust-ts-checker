@@ -1,7 +1,7 @@
 use crate::tokens::*;
 use std::iter::Peekable;
 use std::vec::{IntoIter, Vec};
-use std::{fs, io};
+// use std::{fs, io};
 
 pub struct Lexer {
   raw_data: Peekable<IntoIter<char>>,
@@ -59,9 +59,9 @@ impl Lexer {
     }
   }
 
-  pub fn from_file(file_path: &str) -> io::Result<Self> {
-    Ok(Self::from_text(&fs::read_to_string(file_path)?))
-  }
+  // pub fn from_file(file_path: &str) -> io::Result<Self> {
+  //   Ok(Self::from_text(&fs::read_to_string(file_path)?))
+  // }
 
   fn get_next_char_while<F>(&mut self, raw_token: &mut String, cond: F)
   where
