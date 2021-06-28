@@ -1,3 +1,4 @@
+use super::utils::{peek_token, read_token};
 use crate::lexer::Lexer;
 use crate::parser::{
   Loop, MatchResultValue, MatcherResult, MatcherType, OneOf, Optional, Sequence, Terminal,
@@ -7,49 +8,6 @@ use crate::{unwrap_branch, unwrap_enum, unwrap_match};
 use core::iter::Peekable;
 use std::ops::Deref;
 
-/// SourceFile
-#[derive(Debug)]
-pub struct SourceFile {
-  children: Vec<SourceFileElement>,
-}
-
-#[derive(Debug)]
-enum SourceFileElement {
-  ImportDeclaration(ImportDeclaration),
-  // FunctionDeclaration(FunctionDeclaration),
-}
-
-impl From<Lexer> for SourceFile {
-  fn from(lexer: Lexer) -> Self {
-    let mut peekable = lexer.peekable();
-
-    let mut children = vec![];
-
-    loop {
-      let mut has_result = false;
-
-      let result = ImportDeclaration::create(&mut peekable);
-      match result {
-        Some(Ok(v)) => {
-          has_result = true;
-          children.push(SourceFileElement::ImportDeclaration(v));
-        }
-        Some(Err(r)) => {
-          panic!("Error parsing import: {}", r);
-        }
-        _ => {}
-      };
-
-      if !has_result {
-        break;
-      }
-    }
-
-    SourceFile { children }
-  }
-}
-
-/// ImportDeclaration
 #[derive(Debug)]
 pub struct ImportDeclaration {
   target: String,
@@ -64,7 +22,7 @@ enum ImportClause {
 }
 
 impl ImportDeclaration {
-  fn create(lexer: &mut Peekable<Lexer>) -> Option<Result<Self, String>> {
+  pub fn create(lexer: &mut Peekable<Lexer>) -> Option<Result<Self, String>> {
     let (token, ..) = peek_token(lexer).ok()?;
 
     let mut parser = import_statement();
@@ -233,35 +191,5 @@ fn parse_import_unit(value: &MatchResultValue<Token>) -> NamedImport {
         alias: Some(alias),
       }
     }
-  }
-}
-
-#[derive(Debug)]
-pub struct FunctionDeclaration {}
-
-/// Utils
-fn peek_token(lexer: &mut Peekable<Lexer>) -> Result<(Token, i32, i32), String> {
-  match lexer.peek() {
-    Some(located_token) => match &located_token.token {
-      Ok(t) => Ok((t.clone(), located_token.line, located_token.col)),
-      Err(t) => Err(format!(
-        "line: {} col: {} ImportDeclaration: {}",
-        located_token.line, located_token.col, t
-      )),
-    },
-    _ => Err("Unexpected EOF".to_owned()),
-  }
-}
-
-fn read_token(lexer: &mut Peekable<Lexer>) -> Result<(Token, i32, i32), String> {
-  match lexer.next() {
-    Some(located_token) => match &located_token.token {
-      Ok(t) => Ok((t.clone(), located_token.line, located_token.col)),
-      Err(t) => Err(format!(
-        "line: {} col: {} ImportDeclaration: {}",
-        located_token.line, located_token.col, t
-      )),
-    },
-    _ => Err("Unexpected EOF".to_owned()),
   }
 }
