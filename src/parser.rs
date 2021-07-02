@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 /// Global ///
 
@@ -21,7 +22,7 @@ pub enum MatcherResult<Token> {
 //   }
 // }
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum MatchResultValue<Token> {
   Token(Token),
   Vector(Vec<MatchResultValue<Token>>),         // Loops
@@ -29,17 +30,7 @@ pub enum MatchResultValue<Token> {
   Branch(usize, Box<MatchResultValue<Token>>),  // OneOf
 }
 
-impl<Token: Clone + Debug> Clone for MatchResultValue<Token> {
-  fn clone(&self) -> MatchResultValue<Token> {
-    match self {
-      MatchResultValue::Token(v) => MatchResultValue::Token(v.clone()),
-      MatchResultValue::Vector(v) => MatchResultValue::Vector(v.clone()),
-      MatchResultValue::Option(v) => MatchResultValue::Option(v.clone()),
-      MatchResultValue::Branch(i, v) => MatchResultValue::Branch(*i, v.clone()),
-    }
-  }
-}
-
+#[derive(Clone)]
 pub enum MatcherType<Token> {
   OneOf(OneOf<Token>),
   Sequence(Sequence<Token>),
@@ -78,7 +69,7 @@ pub trait Matcher<Token> {
 }
 
 /// OneOf ///
-
+#[derive(Clone)]
 pub struct OneOf<Token> {
   matchers: Vec<MatcherType<Token>>,
 }
@@ -144,10 +135,11 @@ impl<Token: Clone + Debug> Matcher<Token> for OneOf<Token> {
 }
 
 /// Sequence ///
-
+#[derive(Clone)]
 pub struct Sequence<Token> {
   sequence_matchers: Vec<SequenceMatcher<Token>>,
 }
+#[derive(Clone)]
 struct SequenceMatcher<Token> {
   matcher: MatcherType<Token>,
   result: Option<MatchResultValue<Token>>,
@@ -292,16 +284,21 @@ impl<Token: Clone + Debug> Matcher<Token> for Sequence<Token> {
 }
 
 /// Loop ///
+#[derive(Clone)]
 pub struct Loop<Token> {
-  matcher: Box<MatcherType<Token>>,
-  results: Vec<MatchResultValue<Token>>,
+  original: Box<MatcherType<Token>>,
+  matchers: Vec<SequenceMatcher<Token>>,
 }
 
-impl<Token> Loop<Token> {
+impl<Token: Clone> Loop<Token> {
   pub fn new(matcher: MatcherType<Token>) -> Self {
     Self {
-      matcher: Box::new(matcher),
-      results: Vec::new(),
+      original: Box::new(matcher.clone()),
+      matchers: vec![SequenceMatcher {
+        matcher,
+        is_head: true,
+        result: None,
+      }],
     }
   }
   pub fn matcher(matcher: MatcherType<Token>) -> MatcherType<Token> {
@@ -311,31 +308,79 @@ impl<Token> Loop<Token> {
 
 impl<Token: Clone + Debug> Matcher<Token> for Loop<Token> {
   fn next(&mut self, token: &Token) -> MatcherResult<Token> {
-    let result = self.matcher.next(token);
+    for i in 0..self.matchers.len() {
+      let matcher_state = &mut (self.matchers[i]);
+      let matcher = &mut (matcher_state.matcher);
+      let is_head = matcher_state.is_head;
 
-    match result {
-      MatcherResult::Rejected => MatcherResult::Rejected,
-      MatcherResult::Accepted => MatcherResult::Accepted,
-      MatcherResult::Value(v) => {
-        self.results.push(v);
-        self.matcher.reset();
-        MatcherResult::Value(MatchResultValue::Vector(self.results.clone()))
+      if !is_head {
+        continue;
       }
-      MatcherResult::End(v) => {
-        self.results.push(v);
-        self.matcher.reset();
-        MatcherResult::Value(MatchResultValue::Vector(self.results.clone()))
+
+      match matcher.next(token) {
+        MatcherResult::Rejected => {
+          matcher_state.is_head = false;
+        }
+        MatcherResult::Accepted => {}
+        MatcherResult::Value(v) => {
+          matcher_state.result = Some(v);
+          self.matchers.truncate(i + 1);
+          let result = MatcherResult::Value(MatchResultValue::Vector(
+            (&self.matchers)
+              .into_iter()
+              .map(|matcher_state| matcher_state.result.as_ref().unwrap().clone())
+              .collect(),
+          ));
+
+          self.matchers.push(SequenceMatcher {
+            matcher: self.original.deref().clone(),
+            is_head: true,
+            result: None,
+          });
+
+          return result;
+        }
+        MatcherResult::End(v) => {
+          matcher_state.is_head = false;
+          matcher_state.result = Some(v.clone());
+          self.matchers.truncate(i + 1);
+          let result = MatcherResult::Value(MatchResultValue::Vector(
+            (&self.matchers)
+              .into_iter()
+              .map(|matcher_state| matcher_state.result.as_ref().unwrap().clone())
+              .collect(),
+          ));
+
+          self.matchers.push(SequenceMatcher {
+            matcher: self.original.deref().clone(),
+            is_head: true,
+            result: None,
+          });
+
+          return result;
+        }
       }
+    }
+
+    let has_head = self.matchers.iter().any(|m| m.is_head);
+
+    if has_head {
+      MatcherResult::Accepted
+    } else {
+      MatcherResult::Rejected
     }
   }
   fn reset(&mut self) {
-    self.matcher.reset();
-    self.results = Vec::new();
+    self.matchers = vec![SequenceMatcher {
+      matcher: self.original.deref().clone(),
+      is_head: true,
+      result: None,
+    }]
   }
 }
 
 /// Terminal ///
-
+#[derive(Clone)]
 pub struct Terminal<Token> {
   match_fn: fn(&Token) -> bool,
   executed: bool,
@@ -380,6 +425,7 @@ impl<Token: Clone + Debug> Matcher<Token> for Terminal<Token> {
 // }
 
 /// Optional ///
+#[derive(Clone)]
 pub struct Optional<Token> {
   matcher: Box<MatcherType<Token>>,
   has_emitted: bool,

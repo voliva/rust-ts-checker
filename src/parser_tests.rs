@@ -280,116 +280,72 @@ mod parser_tests {
   }
 
   #[test]
-  fn loop_accepts_only_first_value_from_inner() {
+  fn loop_gives_preference_to_previous_iterations() {
     let mut parser = Loop::matcher(Sequence::matcher(vec![
-      Loop::matcher(Sequence::matcher(vec![
+      Terminal::matcher(|token: &char| *token == 'a'),
+      Optional::matcher(Sequence::matcher(vec![
         Terminal::matcher(|token: &char| *token == 'a'),
         Terminal::matcher(|token: &char| *token == 'b'),
       ])),
-      Terminal::matcher(|token: &char| *token == 'a'),
     ]));
 
-    /*
-    This test documents that the inner loop is useless here, it can't be used.
-    As soon as a new loop would start, the parent sequence completes, and the
-    outer loop restarts the inner one.
-
-    The regex of this one would be `((ab)+a)+`, and Loop can't solve it as of now.
-    Making a Loop that can solve this would mean that it needs to add multiple
-    heads, and it gets quite complex to wrap around this concept.
-
-    It is possible to write a matcher that has the same behavior: if we look at
-    an example of what would be accepted:
-    - ababaababaaba...
-    and not accepted:
-    - _babaababaaba... => Must start with a
-    - abaaababbabab... => Can't have 3 consecutive a's, can't have 2 consecutive b's
-    => Must end with a
-
-    then probably something like this would work:
-
-    a(baa?)+
-
-    Sequence(
-      Terminal(a),
-      Loop(Sequence(
-        Terminal(b),
-        Terminal(a),
-        Optional(Terminal(a))
-      ))
-    )
-    or
-    Sequence(
-      Terminal(a),
-      Loop(OneOf(
-        Sequence(
-          Terminal(b),
-          Terminal(a)
-        ),
-        Sequence(
-          Terminal(b),
-          Terminal(a),
-          Terminal(a)
-        )
-      )
-    ) // All Optionals can be unwrapped with OneOf
-    */
-
     run_test(
       &mut parser,
-      "ababa",
+      "aabaac",
       vec![
-        MatcherResult::Accepted,
-        MatcherResult::Accepted,
         MatcherResult::Value(MatchResultValue::Vector(vec![MatchResultValue::Vector(
-          vec![
-            MatchResultValue::Vector(vec![MatchResultValue::Vector(vec![
-              MatchResultValue::Token('a'),
-              MatchResultValue::Token('b'),
-            ])]),
-            MatchResultValue::Token('a'),
-          ],
+          vec![MatchResultValue::Token('a'), MatchResultValue::Option(None)],
         )])),
-        MatcherResult::Rejected,
-        MatcherResult::Rejected,
-      ],
-    );
-
-    parser.reset();
-
-    run_test(
-      &mut parser,
-      "abaaba",
-      vec![
-        MatcherResult::Accepted,
-        MatcherResult::Accepted,
-        MatcherResult::Value(MatchResultValue::Vector(vec![MatchResultValue::Vector(
-          vec![
-            MatchResultValue::Vector(vec![MatchResultValue::Vector(vec![
-              MatchResultValue::Token('a'),
-              MatchResultValue::Token('b'),
-            ])]),
-            MatchResultValue::Token('a'),
-          ],
-        )])),
-        MatcherResult::Accepted,
-        MatcherResult::Accepted,
         MatcherResult::Value(MatchResultValue::Vector(vec![
           MatchResultValue::Vector(vec![
-            MatchResultValue::Vector(vec![MatchResultValue::Vector(vec![
-              MatchResultValue::Token('a'),
-              MatchResultValue::Token('b'),
-            ])]),
             MatchResultValue::Token('a'),
+            MatchResultValue::Option(None),
           ]),
           MatchResultValue::Vector(vec![
-            MatchResultValue::Vector(vec![MatchResultValue::Vector(vec![
-              MatchResultValue::Token('a'),
-              MatchResultValue::Token('b'),
-            ])]),
             MatchResultValue::Token('a'),
+            MatchResultValue::Option(None),
           ]),
         ])),
+        MatcherResult::Value(MatchResultValue::Vector(vec![MatchResultValue::Vector(
+          vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(Some(Box::new(MatchResultValue::Vector(vec![
+              MatchResultValue::Token('a'),
+              MatchResultValue::Token('b'),
+            ])))),
+          ],
+        )])),
+        MatcherResult::Value(MatchResultValue::Vector(vec![
+          MatchResultValue::Vector(vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(Some(Box::new(MatchResultValue::Vector(vec![
+              MatchResultValue::Token('a'),
+              MatchResultValue::Token('b'),
+            ])))),
+          ]),
+          MatchResultValue::Vector(vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(None),
+          ]),
+        ])),
+        MatcherResult::Value(MatchResultValue::Vector(vec![
+          MatchResultValue::Vector(vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(Some(Box::new(MatchResultValue::Vector(vec![
+              MatchResultValue::Token('a'),
+              MatchResultValue::Token('b'),
+            ])))),
+          ]),
+          MatchResultValue::Vector(vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(None),
+          ]),
+          MatchResultValue::Vector(vec![
+            MatchResultValue::Token('a'),
+            MatchResultValue::Option(None),
+          ]),
+        ])),
+        MatcherResult::Rejected,
       ],
     );
   }
